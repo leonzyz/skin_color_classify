@@ -11,8 +11,7 @@ logreg=pickle.load(pkl_file)
 pkl_file.close()
 
 import cv2
-#cap=cv2.VideoCapture(0)
-cap=cv2.VideoCapture('./test.mp4')
+cap=cv2.VideoCapture(0)
 ret,frame=cap.read()
 org_size=frame.shape
 print frame.shape

@@ -11,12 +11,8 @@ logreg=pickle.load(pkl_file)
 pkl_file.close()
 
 import cv2
-#cap=cv2.VideoCapture(0)
-cap=cv2.VideoCapture('./test.mp4')
-ret,frame=cap.read()
-org_size=frame.shape
-print frame.shape
-print frame[0:2,0:2,:]
+frame=cv2.imread('face.png')
+#cap=cv2.VideoCapture('./test.mp4')
 
 
 def get_segment_frame(frame_in,classifier):
@@ -41,13 +37,10 @@ def get_segment_frame(frame_in,classifier):
 cv2.namedWindow('frame',cv2.WINDOW_NORMAL)
 cv2.namedWindow('seg out',cv2.WINDOW_NORMAL)
 while True:
-	ret,frame=cap.read()
-	outframe=cv2.resize(frame,(org_size[1]/2,org_size[0]/2))
-	#outframe=frame
-	maskframe=get_segment_frame(outframe,logreg)
+	maskframe=get_segment_frame(frame,logreg)
 
 	cv2.imshow('seg out',maskframe)
-	cv2.imshow('frame',outframe)
+	cv2.imshow('frame',frame)
 
 	#while True:
 	if cv2.waitKey(1) & 0xFF==ord('q'):

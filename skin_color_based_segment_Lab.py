@@ -1,94 +1,105 @@
 #!/usr/bin/python
 # RGB+Lab color based segmentation, logistical regression
 import pickle
-#import cPickle
 import numpy as np
 import matplotlib.pyplot as plt
-import random as rd
 from sklearn import linear_model
+from sklearn import tree
+from sklearn.cross_validation import train_test_split
 import color_space_trans as ct
 import cv2
 
-pkl_file=open('inputset.pkl','rb')
-input_set=pickle.load(pkl_file)
-pkl_file.close()
-total_dataset_size=len(input_set)
 
-data_set=np.array(input_set)
+def ReadTrainData(ratio,flagConvert):
+	src=np.genfromtxt('Skin_NonSkin.txt',dtype=np.uint8)
+	total_len=src.shape[0]
+	outlen=int(total_len*ratio)
+	data=src[:outlen,0:3]
+	labels=src[:outlen,3]
+	#conver True 1 False 2 to True 1 False 0
+	if flagConvert:
+		labels=2-labels
+	return data,labels
+	
+def RGB2HVS(rgb):
+	return cv2.cvtColor(rgb,cv2.COLOR_RGB2HSV)
 
-cross_validation_ratio=0.2
-valid_num=int(total_dataset_size*cross_validation_ratio)
+def RGB2LAB(rgb):
+	return cv2.cvtColor(rgb,cv2.COLOR_RGB2Lab)
 
-tran_set_idx=range(total_dataset_size)
-valid_set_idx=[]
-tran_set_len=total_dataset_size
-for idx in range(valid_num):
-	idx=rd.randint(0,tran_set_len-1)
-	valid_set_idx.append(tran_set_idx[idx])
-	del tran_set_idx[idx]
-	tran_set_len-=1
+def ConvertColor(rgb,flag):
+	if flag=='HSV':
+		return RGB2HVS(rgb)
+	elif flag=='Lab':
+		return RGB2LAB(rgb)
+	else:
+		return rgb
 
-rd.shuffle(tran_set_idx)
+def Training(data,labels,flagColorSpace,flagAlg):
+	if flagColorSpace=='HSV':
+		data=RGB2HVS(data)
+	elif flagColorSpace=='Lab':
+		data=RGB2LAB(data)
 
-valid_set=data_set[valid_set_idx]
-tran_set=data_set[tran_set_idx]
+	trainData,testData,trainlabels,testlabels=train_test_split(data,labels,test_size=0.2)
+
+	if flagAlg=='Tree':
+		clf=tree.DecisionTreeClassifier(criterion='entropy')
+	elif flagAlg=='Logistical':
+		clf=linear_model.LogisticRegression()
+	else:
+		clf=linear_model.LogisticRegression()
+
+	clf.fit(trainData,trainlabels)
+	if flagAlg=='Tree':
+		print clf.feature_importances_
+	print clf.score(testData,testlabels)
+
+	return clf
+
+def ApplyFrame(clf,framein,flagColorSpace,flagConvert):
+	frameout=framein.copy()
+	framesize=frameout.shape
+	ConvetedFrame=ConvertColor(frameout,flagColorSpace)
+	frame_1d=np.reshape(ConvetedFrame,(framesize[0]*framesize[1],framesize[2]))
+	testout=clf.predict(frame_1d)
+	if flagConvert:
+		testout=testout*255
+	else:
+		testout=(2-testout)*255
+	mask=np.array([testout,testout,testout])
+	frameout=np.reshape(np.transpose(mask),framesize)
+	return frameout
+
+def TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,path):
+	if flagCarmera:
+		cap=cv2.VideoCapture(0)
+	else:
+		cap=cv2.VideoCapture(path)
+	
+
+	cv2.namedWindow('frame',cv2.WINDOW_NORMAL)
+	cv2.namedWindow('seg out',cv2.WINDOW_NORMAL)
+	while True:
+		ret,frame=cap.read()
+		if True:
+			frame=cv2.resize(frame,(frame.shape[1]/2,frame.shape[0]/2))
+		outframe=ApplyFrame(clf,frame,flagColorSpace,flagConvert)
+
+		cv2.imshow('seg out',outframe)
+		cv2.imshow('frame',frame)
+		#while True:
+		if cv2.waitKey(1) & 0xFF==ord('q'):
+			break
+
+flagColorSpace='RGB'
+flagConvert=True
+flagCarmera=True
+flagAlg='Logistical'
+#flagAlg='Tree'
+data,labels=ReadTrainData(1.0,flagConvert)
+clf=Training(data,labels,flagColorSpace,flagAlg)
+TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,'')
 
 
-classifier=linear_model.LogisticRegression()
-sample=tran_set[:,0:3]
-sample_lab_tmp=cv2.cvtColor(np.array([sample],dtype=np.uint8),cv2.COLOR_RGB2Lab)
-sample_lab=sample_lab_tmp[0]
-print sample[0:10,:]
-print sample_lab[0:10,:]
-sample=ct.RGB_norm(sample)
-sample_lab_norm=ct.Lab_norm(sample_lab)
-sample_rgb_lab=np.column_stack((sample,sample_lab_norm[:,1:3]))
-print sample_rgb_lab[0:10,:]
 
-target=tran_set[:,3]
-#target=(target-1.5)*-2.0
-target=target-1.0
-classifier.fit(sample_rgb_lab,target)
-
-test=valid_set[:,0:3]
-print test[0:10,:]
-test_lab_tmp=cv2.cvtColor(np.array([test],dtype=np.uint8),cv2.COLOR_RGB2Lab)
-test_lab=test_lab_tmp[0]
-print test_lab[0:10,:]
-test=ct.RGB_norm(test)
-test_lab_norm=ct.Lab_norm(test_lab)
-test_rgb_lab=np.column_stack((test,test_lab_norm[:,1:3]))
-print test_rgb_lab[0:10,:]
-#valid_out=(valid_set[:,3]-1.5)*-2.0
-valid_out=valid_set[:,3]-1.0
-x=classifier.predict(test_rgb_lab)
-
-corret_set=x==valid_out
-correct_ratio=(corret_set==True).sum()/float(valid_num)
-'''
-tp=np.logical_and(valid_out==1,x==1).sum()
-fp=np.logical_and(valid_out==-1,x==1).sum()
-tn=np.logical_and(valid_out==-1,x==-1).sum()
-fn=np.logical_and(valid_out==-1,x==1).sum()
-'''
-
-tp=np.logical_and(valid_out==0,x==0).sum()
-fp=np.logical_and(valid_out==1,x==0).sum()
-tn=np.logical_and(valid_out==1,x==1).sum()
-fn=np.logical_and(valid_out==0,x==1).sum()
-'''
-tpr
-fpr
-tnr
-fnr
-'''
-fpr=fp/float(fp+tn)
-tpr=tp/float(tp+fn)
-print "%d %d %d %d" %(tp,fp,tn,fn)
-print "FPR:%f,TPR:%f" %(fpr*100.0,tpr*100.0)
-print "correct rate:%f" % (correct_ratio*100.0)
-
-outfile=open('logistical_classifier_lab.pkl','wb')
-#cPickle.dump(classifier,outfile)
-pickle.dump(classifier,outfile)
-outfile.close()
