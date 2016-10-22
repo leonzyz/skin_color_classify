@@ -1,88 +1,126 @@
 #!/usr/bin/python
-# RGB color based segmentation, logistical regression
 import pickle
-#import cPickle
 import numpy as np
 import matplotlib.pyplot as plt
-import random as rd
 from sklearn import linear_model
-import color_space_trans as ct
+from sklearn import tree
+from sklearn.cross_validation import train_test_split
+from sklearn.ensemble import VotingClassifier
+import cv2
+from sklearn import svm
 
-pkl_file=open('inputset.pkl','rb')
-input_set=pickle.load(pkl_file)
-pkl_file.close()
-total_dataset_size=len(input_set)
 
-data_set=np.array(input_set)
+def ReadTrainData(ratio,flagConvert):
+	src=np.genfromtxt('Skin_NonSkin.txt',dtype=np.uint8)
+	total_len=src.shape[0]
+	outlen=int(total_len*ratio)
+	data=src[:outlen,0:3]
+	labels=src[:outlen,3]
+	#conver True 1 False 2 to True 1 False 0
+	if flagConvert:
+		labels=2-labels
+	return data,labels
+	
 
-cross_validation_ratio=0.2
-valid_num=int(total_dataset_size*cross_validation_ratio)
+def ConvertColor(rgb,flag):
+	dem=rgb.shape
+	if len(dem)==2:
+		tmp=np.reshape(rgb,(dem[0],1,3))
+	else:
+		tmp=rgb
 
-tran_set_idx=range(total_dataset_size)
-valid_set_idx=[]
-tran_set_len=total_dataset_size
-for idx in range(valid_num):
-	idx=rd.randint(0,tran_set_len-1)
-	valid_set_idx.append(tran_set_idx[idx])
-	del tran_set_idx[idx]
-	tran_set_len-=1
+	if flag=='HSV':
+		tmp=cv2.cvtColor(tmp,cv2.COLOR_RGB2HSV)
+	elif flag=='Lab':
+		tmp=cv2.cvtColor(tmp,cv2.COLOR_RGB2Lab)
+	elif flag=='RGBab':
+		tmplab=cv2.cvtColor(tmp,cv2.COLOR_RGB2Lab)
+		if len(dem)==2:
+			tmplab=np.reshape(tmplab,dem)
+			tmp=np.column_stack((rgb,tmplab[:,1:3]))
+			tmp=rgb
+		else:
+			tmplab=np.reshape(tmplab,(dem[0]*dem[1],3))
+			tmp=np.column_stack((np.reshape(rgb,(dem[0]*dem[1],3)),tmplab[:,1:3]))
+			tmp=np.reshape(tmp,(dem[0],dem[1],dem[2]+2))
+			tmp=rgb
+	else:
+		return rgb
 
-rd.shuffle(tran_set_idx)
-print valid_set_idx[0:10]
-print tran_set_idx[0:10]
+	return np.reshape(tmp,dem)
 
-valid_set=data_set[valid_set_idx]
-tran_set=data_set[tran_set_idx]
+def Training(data,labels,flagColorSpace,flagAlg):
+	data=ConvertColor(data,flagColorSpace)
 
-print valid_set.shape
-print tran_set.shape
+	trainData,testData,trainlabels,testlabels=train_test_split(data,labels,test_size=0.2)
 
-classifier=linear_model.LogisticRegression()
-sample=tran_set[:,0:3]
-sample=ct.RGB_norm(sample)
-#sample=ct.RGB_norm2(sample)
-#sample=sample/256.0
-#sample_sum=np.sum(sample,axis=1)
-#divider=np.transpose(np.array([sample_sum,sample_sum,sample_sum]))
-#sample=sample/divider
+	if flagAlg=='Tree':
+		clf=tree.DecisionTreeClassifier(criterion='entropy')
+	elif flagAlg=='Logistical':
+		clf=linear_model.LogisticRegression()
+	elif flagAlg=='Linear':
+		clf=linear_model.LinearRegression()
+	elif flagAlg=='Voting':
+		#clf=VotingClassifier(estimators=[('tree',tree.DecisionTreeClassifier(criterion='entropy')),('logreg',linear_model.LogisticRegression())],voting='soft',weights=[2,1])
+		clf=VotingClassifier(estimators=[('tree',tree.DecisionTreeClassifier(criterion='entropy')),('logreg',linear_model.LogisticRegression())],voting='soft',weights=[3,1])
+	else:
+		clf=linear_model.LogisticRegression()
 
-target=tran_set[:,3]
-target=(target-1.5)*-2.0
-classifier.fit(sample,target)
+	clf.fit(trainData,trainlabels)
+	if flagAlg=='Tree':
+		print clf.feature_importances_
+	print clf.score(testData,testlabels)
 
-#test=valid_set[:,0:3]/256.0
-test=valid_set[:,0:3]
-test=ct.RGB_norm(test)
-#test=ct.RGB_norm2(test)
-valid_out=(valid_set[:,3]-1.5)*-2.0
-x=classifier.predict(test)
+	return clf
 
-corret_set=x==valid_out
-print corret_set[0:10]
-correct_ratio=(corret_set==True).sum()/float(valid_num)
-#a=valid_out==1
-#b=x==1
-#print a[0:10]
-#print b[0:10]
-#print np.logical_and(a[0:10],b[0:10])
-tp=np.logical_and(valid_out==1,x==1).sum()
-fp=np.logical_and(valid_out==-1,x==1).sum()
-tn=np.logical_and(valid_out==-1,x==-1).sum()
-fn=np.logical_and(valid_out==-1,x==1).sum()
+def ApplyFrame(clf,framein,flagColorSpace,flagConvert):
+	frameout=framein.copy()
+	framesize=frameout.shape
+	ConvetedFrame=ConvertColor(frameout,flagColorSpace)
+	frame_1d=np.reshape(ConvetedFrame,(framesize[0]*framesize[1],framesize[2]))
+	testout=clf.predict(frame_1d)
+	if flagConvert:
+		testout=testout*255
+	else:
+		testout=(2-testout)*255
+	mask=np.array([testout,testout,testout])
+	frameout=np.reshape(np.transpose(mask),framesize)
+	return frameout
 
-'''
-tpr
-fpr
-tnr
-fnr
-'''
-fpr=fp/float(fp+tn)
-tpr=tp/float(tp+fn)
-print "%d %d %d %d" %(tp,fp,tn,fn)
-print "FPR:%f,TPR:%f" %(fpr*100.0,tpr*100.0)
-print "correct rate:%f" % (correct_ratio*100.0)
+def TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,path):
+	if flagCarmera:
+		cap=cv2.VideoCapture(0)
+	else:
+		cap=cv2.VideoCapture(path)
+	
 
-outfile=open('logistical_classifier.pkl','wb')
-#cPickle.dump(classifier,outfile)
-pickle.dump(classifier,outfile)
-outfile.close()
+	cv2.namedWindow('frame',cv2.WINDOW_NORMAL)
+	cv2.namedWindow('seg out',cv2.WINDOW_NORMAL)
+	while True:
+		ret,frame=cap.read()
+		if True:
+			frame=cv2.resize(frame,(frame.shape[1]/2,frame.shape[0]/2))
+		outframe=ApplyFrame(clf,frame,flagColorSpace,flagConvert)
+
+		cv2.imshow('seg out',outframe)
+		cv2.imshow('frame',frame)
+		#while True:
+		if cv2.waitKey(1) & 0xFF==ord('q'):
+			break
+
+#flagColorSpace='RGB'
+#flagColorSpace='Lab'
+flagColorSpace='RGBab'
+#flagColorSpace='HSV'
+flagConvert=True
+flagCarmera=True
+#flagAlg='Logistical'
+#flagAlg='Tree'
+data,labels=ReadTrainData(1.0,flagConvert)
+#clf=Training(data,labels,flagColorSpace,flagAlg)
+#TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,'')
+#clf=Training(data,labels,flagColorSpace,'Linear')
+eclf=Training(data,labels,flagColorSpace,'Voting')
+
+
+
