@@ -19,14 +19,10 @@ print "NN ===="
 data=sg.ConvertColor(data,'RGB')
 trainData,testData,trainlabels,testlabels=train_test_split(data,labels,test_size=0.2)
 
-traindata_s=trainData[0:20000]
-trainlabels_s=trainlabels[0:20000]
-testdata_s=testData[0:5000]
-testlabels_s=testlabels[0:5000]
 clf_svm=svm.SVC()
-clf_svm.fit(traindata_s,trainlabels_s)
-print clf_svm.score(testdata_s,testlabels_s)
+clf_svm.fit(trainData,trainlabels)
+print clf_svm.score(testData,testlabels)
 
-outfile=open('clf_svm.pkl','w')
+outfile=open('clf_svm_full.pkl','w')
 pickle.dump(clf_svm,outfile)
 outfile.close()

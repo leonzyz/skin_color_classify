@@ -9,6 +9,13 @@ from sklearn.ensemble import VotingClassifier
 import cv2
 from sklearn import svm
 
+class colortransform:
+	def __init__(self,color_flag):
+		self.flag=color_flag
+	def fit(self,X,y):
+		return self
+	def transform(self,X):
+		return ConvertColor(X,self.flag)
 
 def ReadTrainData(ratio,flagConvert):
 	src=np.genfromtxt('Skin_NonSkin.txt',dtype=np.uint8)
@@ -21,6 +28,12 @@ def ReadTrainData(ratio,flagConvert):
 		labels=2-labels
 	return data,labels
 	
+def BGR2Lab(rgb):
+	return ConvertColor(rgb,'Lab')
+
+def BGR2HSV(rgb):
+	return ConvertColor(rgb,'HSV')
+
 
 def ConvertColor(rgb,flag):
 	dem=rgb.shape
@@ -30,11 +43,11 @@ def ConvertColor(rgb,flag):
 		tmp=rgb
 
 	if flag=='HSV':
-		tmp=cv2.cvtColor(tmp,cv2.COLOR_RGB2HSV)
+		tmp=cv2.cvtColor(tmp,cv2.COLOR_BGR2HSV)
 	elif flag=='Lab':
-		tmp=cv2.cvtColor(tmp,cv2.COLOR_RGB2Lab)
-	elif flag=='RGBab':
-		tmplab=cv2.cvtColor(tmp,cv2.COLOR_RGB2Lab)
+		tmp=cv2.cvtColor(tmp,cv2.COLOR_BGR2Lab)
+	elif flag=='BGRab':
+		tmplab=cv2.cvtColor(tmp,cv2.COLOR_BGR2Lab)
 		if len(dem)==2:
 			tmplab=np.reshape(tmplab,dem)
 			tmp=np.column_stack((rgb,tmplab[:,1:3]))
@@ -73,6 +86,19 @@ def Training(data,labels,flagColorSpace,flagAlg):
 
 	return clf
 
+def ApplyFrame_BGR(clf,framein,flagConvert):
+	frameout=framein.copy()
+	framesize=frameout.shape
+	frame_1d=np.reshape(frameout,(framesize[0]*framesize[1],framesize[2]))
+	testout=clf.predict(frame_1d)
+	if flagConvert:
+		testout=testout*255
+	else:
+		testout=(2-testout)*255
+	mask=np.array([testout,testout,testout])
+	frameout=np.reshape(np.transpose(mask),framesize)
+	return frameout
+
 def ApplyFrame(clf,framein,flagColorSpace,flagConvert):
 	frameout=framein.copy()
 	framesize=frameout.shape
@@ -108,9 +134,9 @@ def TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,path):
 		if cv2.waitKey(1) & 0xFF==ord('q'):
 			break
 
-#flagColorSpace='RGB'
+#flagColorSpace='BGR'
 #flagColorSpace='Lab'
-flagColorSpace='RGBab'
+flagColorSpace='BGRab'
 #flagColorSpace='HSV'
 flagConvert=True
 flagCarmera=True
