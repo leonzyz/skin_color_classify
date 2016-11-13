@@ -109,8 +109,11 @@ def ApplyFrame(clf,framein,flagColorSpace,flagConvert):
 		testout=testout*255
 	else:
 		testout=(2-testout)*255
-	mask=np.array([testout,testout,testout])
-	frameout=np.reshape(np.transpose(mask),framesize)
+	#print testout.shape
+	#mask=np.array([testout,testout,testout])
+	#print mask.shape
+	mask=np.array([testout])
+	frameout=np.reshape(np.transpose(mask),framesize[0:2])
 	return frameout
 
 def TestVedioe(clf,flagColorSpace,flagCarmera,flagConvert,path):
